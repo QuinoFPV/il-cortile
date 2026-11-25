@@ -3327,7 +3327,8 @@ const stage=document.getElementById('stage'), err=document.getElementById('error
 try { init(); } catch(e) {err.textContent='Impossibile avviare la scena 3D: '+e.message;console.error(e);}
 function init(){
 const T=THREE, scene=new T.Scene();scene.background=new T.Color('#bbcbd0');scene.fog=new T.Fog('#bbcbd0',30,80);
-const renderer=new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;renderer.outputEncoding=T.sRGBEncoding;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=.95;stage.prepend(renderer.domElement);
+const mobileGame=new URLSearchParams(location.search).get('game')==='1'&&window.matchMedia('(max-width: 900px), (pointer: coarse)').matches;
+const renderer=new T.WebGLRenderer({antialias:!mobileGame,preserveDrawingBuffer:!mobileGame,powerPreference:mobileGame?'low-power':'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,mobileGame?1.25:2));renderer.shadowMap.enabled=!mobileGame;renderer.shadowMap.type=T.PCFSoftShadowMap;renderer.outputEncoding=T.sRGBEncoding;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=.95;stage.prepend(renderer.domElement);
 let dirty=true;
 const camera=new T.PerspectiveCamera(48,1,0.05,150),controls=new T.OrbitControls(camera,renderer.domElement);controls.addEventListener('change',()=>dirty=true);controls.enableDamping=true;controls.minDistance=.5;controls.maxDistance=45;controls.maxPolarAngle=Math.PI*.49;
 scene.add(new T.HemisphereLight('#e8f3ff','#67664a',.65));const sun=new T.DirectionalLight('#fff0d5',1.05);sun.position.set(-7,12,10);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-16;sun.shadow.camera.right=16;sun.shadow.camera.top=16;sun.shadow.camera.bottom=-16;sun.shadow.bias=-.0004;scene.add(sun);
@@ -3530,48 +3531,260 @@ controls.update();if(!dirty&&!walking)return;dirty=false;renderer.render(scene,c
 requestAnimationFrame(animate);
 if(new URLSearchParams(location.search).get('game')==='1'){
  window.houseGameAPI={scene,model,camera,renderer,controls,parameters:p,terrainHeight,dims,heightDims,shrubs,windowOpening,shutterPivots,redraw:()=>{dirty=true;}};
- 
+
 }
 }
 
 </script>
 <script>
 'use strict';
+// Orientation corrected from the overhead rear photograph supplied on 25 Nov 2026.
+// Main climb facade: Z=0; true rear: Z=-6; terrace wing: left, X<-7.7.
+// Layout from DSC_0006–0010 / DSC_0301–0303; new distances remain estimates.
+window.createPhotoEnvironment=function(T,api){
+ const {scene,model,parameters:p,terrainHeight:baseHeight}=api;
+ const group=new T.Group();group.name='Dintorni dalle fotografie · novembre 2007';scene.add(group);
+ const material=(color)=>new T.MeshStandardMaterial({color,roughness:1});
+ const plaster=material('#c4c1ab'),stone=material('#aaa897'),concrete=material('#a7aaa3'),iron=material('#605046'),green=material('#234a45'),glass=material('#72827b'),wood=material('#72543b'),leaf=material('#4c623e');
+ const masonry=model.children.find(o=>o.isMesh&&o.material.map&&o.geometry.type==='BoxGeometry').material;
+ const gravel=model.children.find(o=>o.name==='Piazzale in ghiaia stimato').material;
+ function box(w,h,d,x,y,z,mat=stone,name=''){
+  const m=new T.Mesh(new T.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;m.name=name;group.add(m);return m;
+ }
+ function beam(a,b,r=.025,mat=iron){const av=new T.Vector3(...a),bv=new T.Vector3(...b),v=bv.clone().sub(av);const m=box(r,v.length(),r,...av.add(bv).multiplyScalar(.5).toArray(),mat);m.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),v.normalize());return m;}
+ function railing(x1,z1,x2,z2,base,style='bars'){
+  const length=Math.hypot(x2-x1,z2-z1),n=Math.ceil(length/(style==='bars'?.16:1.5));
+  for(let i=0;i<=n;i++){const u=i/n;beam([x1+(x2-x1)*u,base,z1+(z2-z1)*u],[x1+(x2-x1)*u,base+1,z1+(z2-z1)*u],style==='bars'?.022:.04);}
+  beam([x1,base+1,z1],[x2,base+1,z2],.045);
+  if(style!=='bars')beam([x1,base+.18,z1],[x2,base+.18,z2],.025);
+ }
+ function grille(x,y,z,w,h,shutters=false){
+  box(w,h,.035,x,y+h/2,z,glass,'Vano con inferriata');
+  for(const s of [-1,1])box(.055,h+.08,.065,x+s*w/2,y+h/2,z-.045,green);
+  for(const yy of [y,y+h])box(w+.1,.055,.065,x,yy,z-.045,green);
+  for(let i=1;i<=5;i++)box(.016,h,.022,x-w/2+w*i/6,y+h/2,z-.08,green);
+  for(let i=1;i<=4;i++)box(w,.018,.025,x,y+h*i/5,z-.085,green);
+  box(w+.22,.07,.25,x,y-.06,z,stone,'Davanzale posteriore');
+  if(shutters)for(const s of [-1,1]){
+   const cx=x+s*(w*.75+.06),sw=w*.46;box(sw,h+.08,.06,cx,y+h/2,z-.025,green);
+   for(let i=0;i<18;i++)box(sw-.04,.025,.025,cx,y+.04+i*(h-.08)/17,z-.07,iron);
+  }
+ }
+ function rearWall(x0,x1,y0,y1,z,holes,mat){
+  const edges=[x0,x1,...holes.flatMap(h=>[h.x-h.w/2,h.x+h.w/2])].sort((a,b)=>a-b);
+  for(let i=1;i<edges.length;i++){
+   const a=edges[i-1],b=edges[i],mid=(a+b)/2;if(b-a<.001)continue;
+   const faceMat=mat===plaster&&z===-9.4&&mid<.2?masonry:mat;
+   let low=y0;for(const h of holes.filter(h=>mid>h.x-h.w/2&&mid<h.x+h.w/2).sort((a,b)=>a.y-b.y)){
+    if(h.y>low)box(b-a,h.y-low,.22,mid,(low+h.y)/2,z,faceMat);low=h.y+h.h;
+   }if(low<y1)box(b-a,y1-low,.22,mid,(low+y1)/2,z,faceMat);
+  }
+ }
+ // Replace the generic rear wall and guessed stair, keeping the main facade intact.
+ for(const o of [...model.children]){
+  const g=o.geometry?.parameters;
+  if(o.name.startsWith('Scala posteriore')||o.name.startsWith('Pianerottolo posteriore')||
+    (g&&Math.abs(o.position.z+p.depth)<.01&&g.width===p.houseW&&g.depth===.35)||o.name==='Parete posteriore ala destra'||
+    (o.geometry?.type==='PlaneGeometry'&&g.width===44)||o.name==='Piazzale in ghiaia stimato')o.visible=false;
+ }
+ rearWall(-2.3,2.3,0,p.mainEaves,-6,[{x:.1,y:3.88,w:1.05,h:1.65},{x:.35,y:.65,w:.75,h:1.05}],masonry);
+ grille(.1,3.88,-6.14,1.05,1.65,true);grille(.35,.65,-6.14,.75,1.05);
+ rearWall(2.3,4.6,0,5.3,-6,[{x:3.4,y:3.88,w:.72,h:1.3}],plaster);
+ grille(3.4,3.88,-6.14,.72,1.3,true);
+ const leftWingStart=new Set(group.children);
+ // Terrace/lower rooms (DSC_0009/0302), initially laid out in a local frame.
+ // Rotate this entire group to the LEFT of the original annex, not behind the house.
+ rearWall(-2.3,4.6,0,3.35,-9.4,[{x:-.8,y:.65,w:1.0,h:1.15},{x:1.55,y:0,w:.95,h:2.1},{x:3.35,y:.72,w:.78,h:1.05}],plaster);
+ box(.18,3.35,3.4,-2.3,1.675,-7.7,masonry);box(.18,3.35,3.4,4.6,1.675,-7.7,plaster);
+ box(7,.15,3.55,1.15,3.275,-7.72,stone,'Terrazza sul lato sinistro');
+ grille(-.8,.65,-9.55,1,1.15);grille(3.35,.72,-9.55,.78,1.05);grille(1.55,0,-9.55,.95,2.1);
+ railing(-2.3,-9.5,4.6,-9.5,3.35);railing(-2.3,-9.5,-2.3,-6.1,3.35);
+ railing(4.6,-9.5,4.6,-7.15,3.35);
+ // Door canopy, clay tiles, lamp and narrow paving at the lower entrance.
+ const tileMat=material('#916b50');
+ const canopy=box(2.45,.10,.95,1.55,2.40,-9.85,wood,'Tettoia ingresso cortile basso');canopy.rotation.x=-.14;
+ for(let i=0;i<16;i++){const tile=new T.Mesh(new T.CylinderGeometry(.07,.07,.99,6,1,true),tileMat);tile.rotation.x=Math.PI/2-.14;tile.position.set(.4+i*.15,2.46,-9.85);group.add(tile);}
+ box(7.1,.06,.7,1.15,.025,-9.8,stone,'Marciapiede del cortile');
+ const bulb=new T.Mesh(new T.SphereGeometry(.065,8,6),new T.MeshBasicMaterial({color:'#ffdc92'}));bulb.position.set(1.55,2.28,-9.65);group.add(bulb);
+ // Local (x,z) -> world (z-1.7,-x-1.4): old rear wall becomes a west-facing side wall.
+ const terraceTransform=new T.Matrix4().makeRotationY(Math.PI/2);terraceTransform.setPosition(-1.7,0,-1.4);
+ const terraceMeshes=group.children.filter(o=>!leftWingStart.has(o));
+ terraceMeshes.forEach(mesh=>mesh.applyMatrix4(terraceTransform));
+ const terraceBounds=new T.Box3();terraceMeshes.forEach(mesh=>{mesh.updateMatrixWorld(true);terraceBounds.expandByObject(mesh);});
+ // Actual rear stair remains next to the stone rear facade, descending to its low garden.
+ // Side staircase, concrete block parapet, rusty handrail and spherical lamp.
+ const stairX=5.65,start=-10.7,end=-5.3,n=20,run=(end-start)/n;
+ for(let i=0;i<n;i++){
+  const y=p.porchFloor*(i+1)/n,z=start+run*(i+.5);
+  box(1.3,y,run,stairX,y/2,z,concrete,'Gradino esterno in cemento');
+  box(.16,.5,.27,4.94,y+.25,z,concrete,'Muretto a blocchi della scala');
+  if(i%4===0||i===n-1)beam([4.94,y+.5,z],[4.94,y+1.15,z],.025);
+ }
+ beam([4.94,.5,start],[4.94,p.porchFloor+.5,end],.022);
+ beam([4.94,1.15,start],[4.94,p.porchFloor+1.15,end],.028);
+ box(1.7,.15,1.2,5.48,p.porchFloor-.075,-5.2,stone,'Pianerottolo scala esterna');
+ box(1.15,.15,.8,5.08,p.porchFloor-.075,-5.95,stone,'Raccordo al passaggio laterale');
+ const lampZ=-10.25;beam([4.8,0,lampZ],[4.8,2,lampZ],.055,green);
+ const globe=new T.Mesh(new T.SphereGeometry(.18,12,8),material('#d1d5bd'));globe.position.set(4.8,2.1,lampZ);group.add(globe);
+ // Retaining wall of the road, white vertical railing and shrubs at the upper level.
+ box(.35,2.4,16,8.25,4.45,-2.2,concrete,'Muro di sostegno lato strada');
+ const roadRail=material('#d3d6c9');
+ for(let i=0;i<90;i++)box(.022,1,.025,8.25,6.15,-10+i*.18,roadRail);
+ box(.05,.04,16,8.25,6.65,-2.1,roadRail);
+ // Timber slats leaning below the roadside wall, as visible in DSC_0007.
+ for(let i=0;i<8;i++){const m=box(.075,1.6,.04,7.9-i*.13,3.75,-5.8,wood);m.rotation.z=-.16;}
+ // Gravel on the low rear courtyard; the garden stays irregular rather than paved.
+ box(10.8,.04,6,1,-.02,-9.6,gravel,'Giardino e passaggio al vero retro');
+ box(1.2,.04,7.8,-11.9,-.02,-2.5,gravel,'Cortile sul lato sinistro');
+ // The small reed-clad outbuilding is visible beyond the real rear facade.
+ box(3.1,2.0,.12,-4.4,1,-11.9,wood,'Capanno di cannicciato dietro la casa');
+ box(.12,2,2.6,-6,1,-13.1,wood);box(.12,2,2.6,-2.8,1,-13.1,wood);
+ for(const x of [-5.2,-3.8])box(.56,1.72,.04,x,.86,-11.81,iron,'Apertura capanno');
+ for(let i=0;i<48;i++)box(.018,1.98,.018,-5.92+i*.064,1,-11.80,stone,'Listelli verticali di cannicciato');
+ for(const sign of [-1,1]){const roof=box(1.76,.09,2.95,-4.4+sign*.79,2.22,-13.1,tileMat,'Falda tetto capanno');roof.rotation.z=-sign*.25;}
+ box(.08,.08,3,-4.4,2.46,-13.1,tileMat,'Colmo capanno');
+ box(2.9,.035,10.8,6.65,p.porchFloor-.02,.1,gravel,'Passaggio laterale in ghiaia');
+ // Low boundary hedge/fence and reed screen beside the lower rooms.
+ railing(-12.8,-6.8,-12.8,2.5,0,'wire');
+ function foliage(x,y,z,s){const m=new T.Mesh(new T.IcosahedronGeometry(1,1),leaf);m.position.set(x,y,z);m.scale.set(s,s*.85,s);group.add(m);}
+ for(let i=0;i<15;i++)foliage(7.75,4+Math.sin(i)*.15,-8+i*.85,.45);
+ for(let i=0;i<12;i++)foliage(-3.1+i*.8,.18,-13.7,.35);
+ // Distant uphill buildings are deliberately simple background silhouettes.
+ for(const [x,z,w,h] of [[13,-8,6,6.5],[14,0,7,5.7]]){
+  box(w,h,5,x,5.6+h/2,z,plaster,'Edificio sullo sfondo · stimato');
+  for(let j=0;j<4;j++)for(let k=0;k<2;k++)box(.55,.95,.035,x-w*.34+j*w*.22,7+k*2,z+2.52,green);
+ }
+ // Only the surroundings change their walking surface. The measured front is unchanged.
+ function surfaceHeight(x,z){
+  if(x>=5.0&&x<=6.4&&z>=start&&z<end)return Math.ceil((z-start)/run)*p.porchFloor/n;
+  if(x>=4.7&&x<=6.45&&z>=end&&z<-4.55)return p.porchFloor;
+  if(x>=-11.18&&x<=-7.78&&z>=-6.05&&z<=.95)return p.porchFloor;
+  if(z<-6.4)return 0;
+  if(x<-11.18)return 0;
+  if(x>6.4&&z<-5.3)return Math.max(0,p.porchFloor*(z+10.7)/5.4);
+  return baseHeight(x,z);
+ }
+ const groundGeo=new T.PlaneGeometry(44,50,88,100);groundGeo.rotateX(-Math.PI/2);groundGeo.translate(0,0,6);
+ const pos=groundGeo.attributes.position;
+ for(let i=0;i<pos.count;i++){
+  const x=pos.getX(i),z=pos.getZ(i);
+  // The terrain remains below the rear building and stairs; their meshes supply
+  // the elevated walk surface. Raising this terrain would hide doors and treads.
+  const belowStructure=(x>=-2.6&&x<=6.5&&z>=start-.1&&z<-6.35)||(x>=-11.3&&x<=-7.7&&z>=-6.2&&z<=1.1);
+  pos.setY(i,(belowStructure?0:surfaceHeight(x,z))-.055);
+ }
+ groundGeo.computeVertexNormals();const ground=new T.Mesh(groundGeo,api.model.children.find(o=>o.geometry?.parameters?.width===44).material);ground.receiveShadow=true;group.add(ground);
+ function blocked(x,z){
+  return (x>8&&x<8.6&&z>-10.5&&z<6.2)||
+   // Left terrace boundaries. The lower western court is a separate walk surface.
+   (x>-11.4&&x<-11.15&&z>-6.15&&z<1)||
+   (x>-11.3&&x<-7.7&&z>-.0&&z<.98)||
+   (x>-11.3&&x<-7.7&&z>-6.2&&z<-5.95)||
+   (x>-6.2&&x<-2.6&&z>-14.6&&z<-11.65);
+ }
+ const openings=[
+  {id:'rear-main',name:'Finestra alta del vero retro',x:.1,z:-6.75,side:'back',message:'Il retro in pietra ha una finestra alta con persiane e inferriata. La terrazza si trova sull’altro lato, a sinistra.'},
+  {id:'rear-lower',name:'Finestra bassa del retro',x:.35,z:-6.75,side:'back',message:'Questo vano è nella parte bassa del prospetto posteriore in pietra.'},
+  {id:'rear-road',name:'Finestra sul passaggio stradale',x:3.4,z:-6.75,side:'back',message:'La finestra con grata del corpo intonacato affianca il prospetto posteriore.'},
+  {id:'left-door',name:'Ingresso sotto la terrazza sinistra',x:-11.95,z:-2.95,side:'left',message:'Questa porta con grata si trova sotto la terrazza sul lato sinistro della casa.'},
+  {id:'left-court',name:'Finestra del cortile sinistro',x:-11.95,z:-.6,side:'left',message:'La finestra con inferriata appartiene al cortile laterale sinistro.'}
+ ];
+ group.userData={references:['DSC_0006','DSC_0007','DSC_0008','DSC_0009','DSC_0010','DSC_0301','DSC_0302','DSC_0303','veduta posteriore dall’alto · 25 novembre 2026'],terraceSide:'left',terraceBounds:{min:terraceBounds.min.toArray(),max:terraceBounds.max.toArray()},dimensions:'stimate dalle immagini',mainFacade:'invariata'};
+ // Merge static surfaces by material: low draw-call count on phones.
+ group.updateMatrixWorld(true);
+ const batches=new Map();
+ for(const mesh of group.children){if(!mesh.isMesh)continue;const list=batches.get(mesh.material)||[];list.push(mesh);batches.set(mesh.material,list);}
+ for(const [mat,meshes] of batches){
+  if(meshes.length<2)continue;
+  const attributes={position:[],normal:[],uv:[]},indices=[];let offset=0;
+  for(const mesh of meshes){
+   const geo=mesh.geometry.clone().applyMatrix4(mesh.matrix);
+   for(const name of Object.keys(attributes))attributes[name].push(...geo.attributes[name].array);
+   if(geo.index)for(const index of geo.index.array)indices.push(index+offset);
+   else for(let i=0;i<geo.attributes.position.count;i++)indices.push(i+offset);
+   offset+=geo.attributes.position.count;geo.dispose();
+  }
+  const merged=new T.BufferGeometry();for(const name of Object.keys(attributes))merged.setAttribute(name,new T.Float32BufferAttribute(attributes[name],name==='uv'?2:3));merged.setIndex(indices);merged.computeBoundingSphere();
+  const combined=new T.Mesh(merged,mat);combined.castShadow=true;combined.receiveShadow=true;combined.name='Dintorni · superfici statiche';
+  for(const mesh of meshes){group.remove(mesh);mesh.geometry.dispose();}group.add(combined);
+ }
+ return {group,surfaceHeight,blocked,openings};
+};
+
+</script>
+<script>
+'use strict';
 (() => {
- const {scene,model,camera,renderer,controls,parameters:p,terrainHeight,dims,heightDims,shrubs,windowOpening,shutterPivots,redraw}=window.houseGameAPI;
- const T=THREE;camera.fov=68;camera.updateProjectionMatrix();
+ const {scene,model,camera,renderer,controls,parameters:p,terrainHeight:originalTerrainHeight,dims,heightDims,shrubs,windowOpening,shutterPivots,redraw}=window.houseGameAPI;
+ const T=THREE;
+ const mobileLayout=window.matchMedia('(max-width: 900px), (pointer: coarse)');
+ const environment=window.createPhotoEnvironment(T,window.houseGameAPI);
+ const groundHeight=environment.surfaceHeight;
+ camera.fov=68;camera.updateProjectionMatrix();
  document.title='Il cortile · esplora la casa';
  const style=document.createElement('style');
- style.textContent=`body{overflow:hidden;background:#182232}header,aside,#toolbar,#hint,#labels{display:none!important}main{display:block;height:100vh}#stage{height:100vh;min-height:0}#game-ui{position:absolute;inset:0;pointer-events:none;font:14px system-ui;color:#f2eee3}#game-ui button{pointer-events:auto;background:#263949;border:1px solid #87979c}#game-top{position:absolute;top:22px;left:24px;max-width:320px;padding:18px;background:#172331e8;border:1px solid #73818b66;border-radius:12px}#game-top h1{font-size:24px;margin:3px 0 8px}#game-top p{margin:8px 0;color:#d3dce1;font-size:13px}#game-count{color:#edcf88}#game-action{position:absolute;bottom:92px;left:50%;transform:translateX(-50%);background:#162331f0;padding:14px 22px;border-radius:12px;text-align:center;max-width:90vw;min-width:240px}#game-action strong{display:block;margin-bottom:6px;color:#f1d397}#game-help{position:absolute;bottom:22px;left:24px;right:24px;font-size:12px;color:#d6dfe3}#game-notice{position:absolute;top:22px;right:24px;max-width:330px;padding:14px 18px;background:#263b49ed;border-radius:12px;line-height:1.5}#game-log{margin:10px 0 0;padding:0;list-style:none;font-size:12px;line-height:1.8}#game-reset{margin-top:12px}#game-win{position:absolute;inset:0;display:none;place-content:center;text-align:center;background:#142230de;pointer-events:auto}#game-win h2{font-size:36px;margin:0}#game-win p{max-width:480px}#game-touch{position:absolute;bottom:45px;right:20px;display:flex;gap:5px;pointer-events:auto}#game-touch button{padding:14px}@media(max-width:700px){#game-top{top:10px;left:10px;padding:12px;max-width:220px}#game-top h1{font-size:20px}#game-notice{top:auto;bottom:200px;right:10px;max-width:220px;font-size:12px}#game-help{display:none}#game-action{bottom:110px}#game-log{display:none}}`;
+ style.textContent=`
+ html,body{height:100%;overscroll-behavior:none}body{overflow:hidden;background:#182232}
+ header,aside,#toolbar,#hint,#labels{display:none!important}main{display:block;height:100vh;height:100dvh}
+ #stage{height:100vh;height:100dvh;min-height:0}#game-ui{position:absolute;inset:0;pointer-events:none;font:14px system-ui;color:#f2eee3}
+ #game-ui button{pointer-events:auto;background:#263949;border:1px solid #87979c;touch-action:none;min-height:44px;user-select:none;-webkit-user-select:none}
+ #game-top{position:absolute;top:18px;left:18px;width:300px;padding:14px;background:#172331ed;border:1px solid #73818b66;border-radius:12px}
+ #game-titlebar{display:flex;align-items:center;justify-content:space-between;gap:12px}#game-top h1{font-size:23px;margin:0}
+ #game-menu{padding:5px 10px}#game-goal{margin:8px 0 0;font-size:13px;line-height:1.4;color:#f0d69a}
+ #game-details{max-height:40vh;overflow:auto;pointer-events:auto}#game-details[hidden]{display:none}#game-details p{font-size:13px}
+ #game-count{color:#edcf88;margin-top:12px}#game-log{margin:8px 0;padding:0;list-style:none;font-size:12px;line-height:1.8}#game-reset{margin:8px 0}#game-places{display:flex;gap:6px;flex-wrap:wrap}#game-places button{font-size:12px;padding:8px}
+ #game-action{position:absolute;bottom:94px;left:50%;transform:translateX(-50%);background:#162331f0;padding:12px 18px;border-radius:12px;text-align:center;max-width:90vw;min-width:240px}
+ #game-action strong{display:block;margin-bottom:5px;color:#f1d397}#game-context{margin-top:8px;width:100%}
+ #game-help{position:absolute;bottom:12px;left:18px;right:18px;font-size:12px;color:#d6dfe3}
+ #game-notice{position:absolute;top:18px;right:18px;max-width:320px;padding:12px 15px;background:#263b49ed;border-radius:12px;line-height:1.4;font-size:13px}
+ #game-touch{position:absolute;inset:0;pointer-events:none}#game-dpad{position:absolute;bottom:42px;left:18px;display:grid;grid-template:repeat(3,46px)/repeat(3,46px);gap:4px}
+ #game-dpad button{padding:0;font-size:21px;background:#263949ec}#game-dpad [data-key=arrowup]{grid-area:1/2}#game-dpad [data-key=arrowleft]{grid-area:2/1}#game-dpad [data-key=arrowdown]{grid-area:2/2}#game-dpad [data-key=arrowright]{grid-area:2/3}
+ #game-commands{position:absolute;right:18px;bottom:42px;display:flex;gap:6px}#game-commands button{min-width:64px}
+ #game-look{display:none}#game-win{display:none}
+ @media(max-width:900px),(pointer:coarse){
+  #game-top{top:max(8px,env(safe-area-inset-top));left:max(8px,env(safe-area-inset-left));right:max(8px,env(safe-area-inset-right));width:auto;padding:9px 12px}
+  #game-top h1{font-size:18px}#game-menu{font-size:12px;min-height:36px}#game-goal{margin:3px 0 0;font-size:12px;line-height:1.35}
+  #game-details{max-height:33dvh}#game-details p{font-size:12px}#game-log{font-size:12px}
+  #game-help{display:none}#game-notice{top:108px;left:12px;right:12px;max-width:none;padding:8px 11px;font-size:12px;background:#263b49d9}
+  #game-action{bottom:calc(180px + env(safe-area-inset-bottom));left:12px;right:12px;transform:none;min-width:0;max-width:none;padding:9px 12px;font-size:12px}
+  #game-dpad{bottom:calc(4px + env(safe-area-inset-bottom));left:max(10px,env(safe-area-inset-left));grid-template:repeat(3,44px)/repeat(3,44px);gap:4px}
+  #game-commands{right:max(10px,env(safe-area-inset-right));bottom:calc(22px + env(safe-area-inset-bottom));flex-direction:column;gap:6px}
+  #game-commands button{width:104px;padding:8px 9px;font-size:13px;min-height:44px}
+  #game-look{display:block;position:absolute;bottom:calc(20px + env(safe-area-inset-bottom));left:165px;right:123px;text-align:center;color:#d6dfe3;font-size:10px;line-height:1.3}
+ }
+ @media(max-height:500px) and (orientation:landscape){
+  #game-top{right:auto;width:310px;padding:6px 10px}#game-titlebar h1{font-size:16px}#game-menu{min-height:30px;padding:3px 9px}#game-goal{font-size:11px;margin-top:1px}
+  #game-notice{top:max(8px,env(safe-area-inset-top));left:auto;right:12px;width:290px;font-size:11px;padding:8px 11px}
+  #game-action{left:170px;right:130px;bottom:calc(12px + env(safe-area-inset-bottom));font-size:11px;max-width:360px;margin:auto}
+  #game-details{max-height:48dvh}#game-look{display:none}
+ }
+ `;
  document.head.append(style);
  const ui=document.createElement('div');ui.id='game-ui';
- ui.innerHTML=`<div id="game-top"><small>PROTOTIPO 03 · ENTRA NELLA STANZA</small><h1>Il cortile</h1><p>Gira intorno alla casa, prova le aperture e trova un ingresso.</p><p id="game-goal"></p><div id="game-count"></div><ul id="game-log"></ul><button id="game-reset">Ricomincia</button></div><div id="game-notice">Esplora con WASD. Trascina la visuale per guardarti intorno. Le aperture del retro sono un completamento provvisorio.</div><div id="game-action"><div id="game-action-text" aria-live="polite"></div><button id="game-context" hidden></button></div><div id="game-help">WASD / frecce · movimento &nbsp; Trascina · visuale &nbsp; Rotella · distanza &nbsp; E · esamina &nbsp; Spazio · sali &nbsp; C · scendi</div><div id="game-touch"><button data-key="arrowleft">←</button><button data-key="arrowup">↑</button><button data-key="arrowdown">↓</button><button data-key="arrowright">→</button><button id="game-e">E</button><button id="game-up">Sali</button><button id="game-down">Scendi</button></div><div id="game-win"><h2>Sei dentro.</h2><p>Hai trovato il percorso attraverso le due finestre. Puoi ricominciare ed esplorare le altre aperture.</p><button id="game-again">Torna nel cortile</button></div>`;
+ ui.innerHTML=`<div id="game-top"><div id="game-titlebar"><h1>Il cortile</h1><button id="game-menu" aria-expanded="false" aria-controls="game-details">Menu</button></div><p id="game-goal"></p><div id="game-details" hidden><p>Esplora la casa, il piazzale, la scala e il cortile basso. Le distanze dei nuovi dintorni sono stimate dalle foto.</p><div id="game-count"></div><ul id="game-log"></ul><div id="game-places"><button id="game-front">Facciata principale</button><button id="game-rear">Vero retro</button><button id="game-left">Cortile sinistro</button></div><button id="game-reset">Ricomincia</button></div></div><div id="game-notice" aria-live="polite"></div><div id="game-action"><div id="game-action-text" aria-live="polite"></div><button id="game-context" hidden></button></div><div id="game-help">WASD / frecce · movimento &nbsp; Trascina · visuale &nbsp; Rotella · distanza &nbsp; E · esamina &nbsp; Spazio · sali &nbsp; C · scendi</div><div id="game-touch"><div id="game-dpad" role="group" aria-label="Movimento"><button data-key="arrowleft" aria-label="Vai a sinistra">←</button><button data-key="arrowup" aria-label="Vai avanti">↑</button><button data-key="arrowdown" aria-label="Vai indietro">↓</button><button data-key="arrowright" aria-label="Vai a destra">→</button></div><div id="game-commands"><button id="game-e">Esamina</button><button id="game-up">Sali</button><button id="game-down">Scendi</button></div></div><div id="game-look">Trascina la scena<br>per guardarti intorno</div><div id="game-win"><button id="game-again">Torna nel cortile</button></div>`;
  document.getElementById('stage').append(ui);
  const $=id=>document.getElementById(id);
- document.getElementById('quotes').checked=false;dims.visible=false;heightDims.visible=false;shrubs.visible=false;
+ document.getElementById('quotes').checked=false;dims.visible=false;heightDims.visible=false;shrubs.visible=true;
+ // Keep vegetation in the surroundings from hiding the climbable facade.
+ shrubs.children.forEach(o=>{if(o.isMesh&&o.geometry.type==='IcosahedronGeometry'&&o.position.z<p.fenceSetback&&o.geometry.parameters.radius>.5)o.scale.multiplyScalar(.35);});
+ $('game-menu').onclick=()=>{const open=$('game-details').hidden;$('game-details').hidden=!open;$('game-menu').setAttribute('aria-expanded',String(open));};
+ function touchText(text){return mobileLayout.matches?text.replace('E oppure Spazio · entra','Tocca Entra').replace(/Spazio per/gi,'Tocca Sali per').replace(/Premi E per/gi,'Tocca Apri la finestra per').replace(/Spazio · prosegui/g,'Tocca Sali per proseguire').replace(/Spazio · sali/g,'Tocca Sali').replace(/E · esamina/g,'Tocca Esamina').replace(/E · /g,'').replace(/C · scendi/g,'Tocca Scendi').replace(/con C/g,'con Scendi'):text;}
+
  model.children.filter(o=>o.name.startsWith('Uomo alto')).forEach(o=>o.visible=false);
  scene.background=new T.Color('#687488');scene.fog=new T.Fog('#687488',32,80);
  controls.enablePan=false;controls.enableDamping=false;controls.minDistance=2;controls.maxDistance=8;controls.maxPolarAngle=Math.PI*.46;
  scene.children.filter(o=>o.isDirectionalLight).forEach(o=>{o.intensity=.7;o.color.set('#edc2a5');});
  scene.children.filter(o=>o.isHemisphereLight).forEach(o=>o.intensity=.85);
- // The two rear openings are provisional gameplay additions, grouped separately.
- const rear=new T.Group();rear.name='Retro provvisorio per il gioco';scene.add(rear);
- const before=new Set(model.children);windowOpening(-4.8,.9,.85,1.05,true);windowOpening(.8,1.2,.5,.8,false);
- model.children.filter(o=>!before.has(o)).forEach(o=>{model.remove(o);o.rotation.y=Math.PI;o.position.x=-o.position.x;o.position.z=-p.depth-.45-o.position.z;rear.add(o);});
  const openings=[
-  {id:'left-door',name:'Portafinestra con grata',x:-3.7,z:.75,side:'front',message:'La grata protegge tutta la portafinestra. Cerca un’altra apertura.'},
+  {id:'front-left-door',name:'Portafinestra con grata',x:-3.7,z:.75,side:'front',message:'La grata protegge tutta la portafinestra. Cerca un’altra apertura.'},
   {id:'annex',name:'Finestra dell’ala sinistra',x:-3.7,z:1.95,side:'front',message:'È alta e la parete qui non offre appoggi. Esamina le altre finestre.'},
   {id:'lower',name:'Finestrina sotto il davanzale',x:.45,z:.8,side:'front',message:'La grata e la cornice formano una serie di appoggi. Spazio per iniziare la salita.',route:true},
   {id:'porch',name:'Porta del portico',x:3.4,z:-1.65,side:'porch',message:'La porta è chiusa. La finestra alta sulla facciata sembra più promettente.'},
   {id:'side',name:'Finestra laterale destra',x:5.35,z:-4.4,side:'side',message:'La finestra laterale ha un’inferriata fissa. Prova anche il retro.'},
-  {id:'rear-main',name:'Finestrina posteriore · provvisoria',x:-.8,z:-6.8,side:'back',message:'Anche questa piccola apertura è protetta da una grata.'},
-  {id:'rear-annex',name:'Finestra sul retro · provvisoria',x:4.8,z:-6.8,side:'back',message:'È chiusa dall’interno. Torna alla coppia di finestre sulla facciata.'}
+  ...environment.openings
  ];
- // Rear wing spans negative X: keep the provisional rear window on that wing.
- const rearAnnex=rear.children.filter(o=>o.position.x>3);
- rearAnnex.forEach(o=>o.position.x-=9.6);openings[6].x=-4.8;
  const markers=new T.Group();scene.add(markers);
- openings.forEach(o=>{const mesh=new T.Mesh(new T.TorusGeometry(.22,.025,6,24),new T.MeshBasicMaterial({color:'#e7c981'}));mesh.rotation.x=Math.PI/2;mesh.position.set(o.x,terrainHeight(o.x,o.z)+.06,o.z);markers.add(mesh);o.marker=mesh;});
+ openings.forEach(o=>{const mesh=new T.Mesh(new T.TorusGeometry(.22,.025,6,24),new T.MeshBasicMaterial({color:'#e7c981'}));mesh.rotation.x=Math.PI/2;mesh.position.set(o.x,groundHeight(o.x,o.z)+.06,o.z);markers.add(mesh);o.marker=mesh;});
  const avatar=new T.Group();avatar.name='Joueur 1,78 m';scene.add(avatar);
  const materials={shirt:new T.MeshStandardMaterial({color:'#264566',roughness:.9}),pants:new T.MeshStandardMaterial({color:'#333b44',roughness:1}),skin:new T.MeshStandardMaterial({color:'#704832',roughness:.85}),hair:new T.MeshStandardMaterial({color:'#171a1b'}),shoe:new T.MeshStandardMaterial({color:'#d6d3c7'})};
  function oval(x,y,z,sx,sy,sz,mat){const m=new T.Mesh(new T.SphereGeometry(1,12,10),mat);m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.castShadow=true;avatar.add(m);return m;}
@@ -3590,7 +3803,7 @@ if(new URLSearchParams(location.search).get('game')==='1'){
  let shuttersOpened=false,returnedToGround=false,glassBroken=false;
  let shutterMotion=null,throwMotion=null,nearThrowPoint=false;
  const mainShutters=shutterPivots.filter(item=>item.main);
- const throwPoint=new T.Vector3(.225,terrainHeight(.225,4.05),4.05);
+ const throwPoint=new T.Vector3(.225,groundHeight(.225,4.05),4.05);
  const throwMarker=new T.Mesh(new T.TorusGeometry(.38,.035,8,32),new T.MeshBasicMaterial({color:'#efb967'}));
  throwMarker.rotation.x=Math.PI/2;
  throwMarker.position.copy(throwPoint).y+=.055;
@@ -3664,22 +3877,23 @@ if(new URLSearchParams(location.search).get('game')==='1'){
   if(t>=2.6){throwMotion=null;stone.visible=false;glassDebris.clear();}
  }
 
- const route=[new T.Vector3(.45,terrainHeight(.45,.85),.85),new T.Vector3(.45,1.60,.36),new T.Vector3(.45,2.18,.36),new T.Vector3(.35,2.62,.36),new T.Vector3(.08,3.80,.13),new T.Vector3(0,2.91,-.7)];
+ const route=[new T.Vector3(.45,groundHeight(.45,.85),.85),new T.Vector3(.45,1.60,.36),new T.Vector3(.45,2.18,.36),new T.Vector3(.35,2.62,.36),new T.Vector3(.08,3.80,.13),new T.Vector3(0,2.91,-.7)];
  function updateLog(){ $('game-count').textContent=`${visited.size} / ${openings.length} aperture esaminate`;$('game-log').innerHTML=openings.map(o=>`<li style="color:${visited.has(o.id)?'#b9d4b8':'#9baab5'}">${visited.has(o.id)?'✓':'○'} ${o.name}</li>`).join(''); }
- function say(text){$('game-notice').textContent=text;}
+ function say(text){$('game-notice').textContent=touchText(text);}
  function reset(){
   keys.clear();visited.clear();
   openings.forEach(o=>o.marker.material.color.set('#e7c981'));
   won=false;inside=false;climbing=false;level=0;transition=null;controls.minDistance=2;controls.maxDistance=8;
   returnedToGround=false;glassBroken=false;throwMotion=null;nearThrowPoint=false;
   stone.visible=false;glassDebris.clear();closeShutters();setBrokenGlass(false);
-  avatar.position.set(-1.2,terrainHeight(-1.2,.9),.9);avatar.rotation.y=0;
-  camera.position.copy(avatar.position).add(new T.Vector3(0,2.7,2.1));
+  avatar.position.set(-.45,groundHeight(-.45,.9),.9);avatar.rotation.y=0;
+  camera.position.copy(avatar.position).add(new T.Vector3(mobileLayout.matches?1.2:.65,mobileLayout.matches?6:2.4,mobileLayout.matches?5.3:2));
+  camera.position.y=Math.max(camera.position.y,groundHeight(camera.position.x,camera.position.z)+.6);
   controls.target.copy(avatar.position).add(new T.Vector3(0,1.8,0));
   $('game-win').style.display='none';openPanels(false);updateLog();updateGoal();
   say('Gli scuri verdi sono chiusi. Sali sulle sbarre della finestrina per raggiungerli.');
  }
- function blocked(x,z){return (x>-8.05&&x<2.65&&z<.36&&z>-6.45)||(x>2.3&&x<4.95&&z<-2.1&&z>-6.45)||(Math.hypot(x-4.35,z)<.6);}
+ function blocked(x,z){return environment.blocked(x,z)||(x>-8.05&&x<2.65&&z<.36&&z>-6.45)||(x>2.3&&x<4.95&&z<-2.1&&z>-6.45)||(Math.hypot(x-4.35,z)<.6);}
  function moveInside(dx,dz){
   for(const axis of ['x','z']){
    const x=avatar.position.x+(axis==='x'?dx:0);
@@ -3689,7 +3903,7 @@ if(new URLSearchParams(location.search).get('game')==='1'){
   }
   avatar.position.y=2.91;
  }
- function move(dx,dz){if(inside){moveInside(dx,dz);return;}for(const axis of ['x','z']){const x=avatar.position.x+(axis==='x'?dx:0),z=avatar.position.z+(axis==='z'?dz:0);if(x>-13&&x<14&&z>-14&&z<20&&!blocked(x,z))avatar.position[axis]=axis==='x'?x:z;}avatar.position.y=terrainHeight(avatar.position.x,avatar.position.z);}
+ function move(dx,dz){if(inside){moveInside(dx,dz);return;}for(const axis of ['x','z']){const x=avatar.position.x+(axis==='x'?dx:0),z=avatar.position.z+(axis==='z'?dz:0);if(x>-13&&x<7.5&&z>-13.5&&z<20&&!blocked(x,z)&&Math.abs(groundHeight(x,z)-avatar.position.y)<.60)avatar.position[axis]=axis==='x'?x:z;}avatar.position.y=groundHeight(avatar.position.x,avatar.position.z);}
  function interact(){
   if(inside){reset();return;}
   if(won||transition||shutterMotion||throwMotion)return;
@@ -3792,14 +4006,25 @@ if(new URLSearchParams(location.search).get('game')==='1'){
   updateGoal();
   say('Sei entrato. Ora puoi muoverti nella stanza. L’interno è una ricostruzione provvisoria per il gioco.');
  }
+ function visitPlace(place){
+  const rear=place==='rear',leftCourt=place==='left';
+  if(climbing||transition||throwMotion||shutterMotion||inside){say('Concludi la salita o torna nel cortile prima di cambiare luogo.');return;}
+  keys.clear();const x=leftCourt?-11.95:rear?5.8:-.45,z=leftCourt?-4.4:rear?-9.9:.9;
+  avatar.position.set(x,groundHeight(x,z),z);avatar.rotation.y=leftCourt?-Math.PI/2:rear?Math.PI:0;
+  camera.position.copy(avatar.position).add(leftCourt?new T.Vector3(-4,3.4,2.2):new T.Vector3(rear?2.4:.65,rear?3.4:2.4,rear?-4:2));
+  controls.target.copy(avatar.position).add(new T.Vector3(0,1.6,0));controls.update();
+  $('game-details').hidden=true;$('game-menu').setAttribute('aria-expanded','false');
+  say(leftCourt?'Cortile sul lato sinistro, guardando la finestra della scalata: qui si trova il volume con la terrazza.':rear?'Questo è il vero retro: parete in pietra con grate, corpo intonacato, scala e capanno sul giardino. Distanze stimate dalle foto.':'Sei tornato davanti alla coppia di finestre.');
+ }
+ $('game-front').onclick=()=>visitPlace('front');$('game-rear').onclick=()=>visitPlace('rear');$('game-left').onclick=()=>visitPlace('left');
  const bindings={e:interact,' ':()=>advance(1),c:()=>advance(-1)};
  window.addEventListener('keydown',e=>{const key=e.key.toLowerCase();if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' ','e','c'].includes(key)){e.preventDefault();if(!e.repeat&&bindings[key])bindings[key]();keys.add(key);}});
  window.addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));window.addEventListener('blur',()=>keys.clear());
- document.querySelectorAll('[data-key]').forEach(b=>{b.onpointerdown=e=>{e.preventDefault();b.setPointerCapture(e.pointerId);keys.add(b.dataset.key);};b.onpointerup=b.onpointercancel=()=>keys.delete(b.dataset.key);});
+ document.querySelectorAll('[data-key]').forEach(b=>{b.onpointerdown=e=>{e.preventDefault();b.setPointerCapture(e.pointerId);keys.add(b.dataset.key);};b.onpointerup=b.onpointercancel=b.onlostpointercapture=()=>keys.delete(b.dataset.key);});
  $('game-context').onclick=interact;$('game-e').onclick=interact;$('game-up').onclick=()=>advance(1);$('game-down').onclick=()=>advance(-1);$('game-reset').onclick=$('game-again').onclick=reset;
- const cameraWalls=model.children.filter(o=>o.isMesh&&o.geometry?.type==='BoxGeometry'&&o.geometry.parameters.height>3.8);
+ const cameraWalls=[...model.children.filter(o=>o.isMesh&&o.geometry?.type==='BoxGeometry'&&(o.geometry.parameters.height>3.8||Math.abs(o.rotation.z)>.05||o.name.includes('Tetto')))];
  let last=performance.now();
- function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-last)/1000,.04);last=now;const old=avatar.position.clone(),wasInside=inside;let moving=false;
+ function tick(now){requestAnimationFrame(tick);if(mobileLayout.matches&&now-last<30)return;const dt=Math.min((now-last)/1000,.04);last=now;const old=avatar.position.clone(),wasInside=inside;let moving=false;
  if(transition){transition.elapsed+=dt;const t=Math.min(1,transition.elapsed/transition.duration),u=t*t*(3-2*t);avatar.position.lerpVectors(transition.from,transition.to,u);
  if(transition.next===5){
   const landing=Math.max(0,Math.min(1,(t-.60)/.40));
@@ -3819,6 +4044,7 @@ if(new URLSearchParams(location.search).get('game')==='1'){
  const delta=avatar.position.clone().sub(old);if(inside===wasInside)camera.position.add(delta);controls.target.copy(avatar.position).add(new T.Vector3(0,inside?1.1:1.8,0));controls.update();
  // Keep the orbit camera outside masonry when looking around corners.
  const ray=new T.Raycaster(controls.target,camera.position.clone().sub(controls.target).normalize(),.2,camera.position.distanceTo(controls.target));const hit=ray.intersectObjects(cameraWalls,false).find(h=>h.object.visible);if(!inside&&hit&&hit.distance>.65)camera.position.copy(controls.target).addScaledVector(ray.ray.direction,Math.max(.65,hit.distance-.2));
+ if(!inside){camera.position.y=Math.max(camera.position.y,groundHeight(camera.position.x,camera.position.z)+.3);camera.lookAt(controls.target);}
  if(inside){camera.position.x=T.MathUtils.clamp(camera.position.x,-1.9,1.9);camera.position.z=T.MathUtils.clamp(camera.position.z,-5.5,-.55);camera.position.y=T.MathUtils.clamp(camera.position.y,3.3,5.55);camera.lookAt(controls.target);} 
  nearest=null;let distance=1.7;for(const o of openings){const d=Math.hypot(avatar.position.x-o.x,avatar.position.z-o.z);o.marker.visible=!climbing&&!inside;if(d<distance){distance=d;nearest=o;}}
  nearThrowPoint=!inside&&!climbing&&avatar.position.distanceTo(throwPoint)<1.05;
@@ -3839,13 +4065,14 @@ if(new URLSearchParams(location.search).get('game')==='1'){
   buttonLabel='Lancia il sasso';actionMarkup='<strong>Balaustra davanti alla finestra</strong>E · lancia verso il vetro destro';
  }else if(nearest){actionMarkup=`<strong>${nearest.name}</strong>E · esamina${nearest.route?' &nbsp; Spazio · sali':''}`;}
  else {actionMarkup='<strong>Esplora il cortile</strong>Avvicinati a un cerchio dorato';}
+ actionMarkup=touchText(actionMarkup);
  if($('game-action-text').innerHTML!==actionMarkup)$('game-action-text').innerHTML=actionMarkup;
  const contextButton=$('game-context');contextButton.hidden=!buttonLabel;
  if(contextButton.textContent!==buttonLabel)contextButton.textContent=buttonLabel;
  redraw();
  }
  reset();requestAnimationFrame(tick);
- window.houseGame={avatar,openings,visited,reset,interact,advance,get state(){return {level,climbing,won,inside,transition:!!transition,panelsOpen,shuttersOpened,returnedToGround,glassBroken,throwing:!!throwMotion};}};
+ window.houseGame={avatar,environment,openings,visited,reset,interact,advance,get state(){return {level,climbing,won,inside,transition:!!transition,panelsOpen,shuttersOpened,returnedToGround,glassBroken,throwing:!!throwMotion};}};
 })();
 
 </script>
