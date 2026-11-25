@@ -3544,7 +3544,7 @@ if(new URLSearchParams(location.search).get('game')==='1'){
 window.createPhotoEnvironment=function(T,api){
  const {scene,model,parameters:p,terrainHeight:baseHeight}=api;
  const group=new T.Group();group.name='Dintorni dalle fotografie · novembre 2007';scene.add(group);
- const material=(color)=>new T.MeshStandardMaterial({color,roughness:1});
+ const material=(color)=>{const m=new T.MeshStandardMaterial({color,roughness:1});m.color.convertSRGBToLinear();return m;};
  const plaster=material('#c4c1ab'),stone=material('#aaa897'),concrete=material('#a7aaa3'),iron=material('#605046'),green=material('#234a45'),glass=material('#72827b'),wood=material('#72543b'),leaf=material('#4c623e');
  const masonry=model.children.find(o=>o.isMesh&&o.material.map&&o.geometry.type==='BoxGeometry').material;
  const gravel=model.children.find(o=>o.name==='Piazzale in ghiaia stimato').material;
@@ -3574,7 +3574,7 @@ window.createPhotoEnvironment=function(T,api){
   const edges=[x0,x1,...holes.flatMap(h=>[h.x-h.w/2,h.x+h.w/2])].sort((a,b)=>a-b);
   for(let i=1;i<edges.length;i++){
    const a=edges[i-1],b=edges[i],mid=(a+b)/2;if(b-a<.001)continue;
-   const faceMat=mat===plaster&&z===-9.4&&mid<.2?masonry:mat;
+   const faceMat=mat===plaster&&z===-9.4&&y0===0&&mid>3.0?masonry:mat;
    let low=y0;for(const h of holes.filter(h=>mid>h.x-h.w/2&&mid<h.x+h.w/2).sort((a,b)=>a.y-b.y)){
     if(h.y>low)box(b-a,h.y-low,.22,mid,(low+h.y)/2,z,faceMat);low=h.y+h.h;
    }if(low<y1)box(b-a,y1-low,.22,mid,(low+y1)/2,z,faceMat);
@@ -3589,8 +3589,16 @@ window.createPhotoEnvironment=function(T,api){
  }
  rearWall(-2.3,2.3,0,p.mainEaves,-6,[{x:.1,y:3.88,w:1.05,h:1.65},{x:.35,y:.65,w:.75,h:1.05}],masonry);
  grille(.1,3.88,-6.14,1.05,1.65,true);grille(.35,.65,-6.14,.75,1.05);
- rearWall(2.3,4.6,0,5.3,-6,[{x:3.4,y:3.88,w:.72,h:1.3}],plaster);
- grille(3.4,3.88,-6.14,.72,1.3,true);
+ // The plaster rear face is recessed relative to the stone gable.
+ const rearSetback=.55;
+ rearWall(2.3,4.6,0,5.3,-6+rearSetback,[{x:3.4,y:3.88,w:.72,h:1.3}],plaster);
+ grille(3.4,3.88,-6.14+rearSetback,.72,1.3,true);
+ // Rainwater pipes identify the masonry corner and the plaster return.
+ const pipeMetal=material('#8d9084'),pipeBrown=material('#51493e');
+ beam([1.55,.15,-6.18],[1.55,5.7,-6.18],.05,pipeMetal);
+ beam([1.55,5.7,-6.18],[1.35,5.78,-6.18],.05,pipeMetal);
+ beam([4.48,.15,-5.63],[4.48,4.95,-5.63],.07,pipeBrown);
+ beam([4.48,4.95,-5.63],[4.72,5.28,-5.63],.07,pipeBrown);
  const leftWingStart=new Set(group.children);
  // Terrace/lower rooms (DSC_0009/0302), initially laid out in a local frame.
  // Rotate this entire group to the LEFT of the original annex, not behind the house.
@@ -3598,10 +3606,50 @@ window.createPhotoEnvironment=function(T,api){
  box(.18,3.35,3.4,-2.3,1.675,-7.7,masonry);box(.18,3.35,3.4,4.6,1.675,-7.7,plaster);
  box(7,.15,3.55,1.15,3.275,-7.72,stone,'Terrazza sul lato sinistro');
  grille(-.8,.65,-9.55,1,1.15);grille(3.35,.72,-9.55,.78,1.05);grille(1.55,0,-9.55,.95,2.1);
- railing(-2.3,-9.5,4.6,-9.5,3.35);railing(-2.3,-9.5,-2.3,-6.1,3.35);
- railing(4.6,-9.5,4.6,-7.15,3.35);
+ railing(-2.3,-9.5,4.6,-9.5,3.35);railing(-2.3,-9.5,-2.3,-8.15,3.35);
+ railing(4.6,-9.5,4.6,-8.15,3.35);
  // Door canopy, clay tiles, lamp and narrow paving at the lower entrance.
  const tileMat=material('#916b50');
+ // Garden-facing photograph: the upper room runs behind the full terrace.
+ // Its west wall has a balcony door; its southern gable has the shuttered window.
+ const roomFront=-8.15,roomBack=-6.0,roomMid=(roomFront+roomBack)/2;
+ const white=material('#dad9ce');
+ rearWall(-2.3,4.6,3.35,5.65,roomFront,[{x:1.15,y:3.35,w:.86,h:2.05},{x:1.15,y:5.47,w:.76,h:.14}],plaster);
+ box(6.9,2.3,.16,1.15,4.5,roomBack,plaster,'Parete stanza lungo terrazza');
+ // Side wall with a real opening for the end window.
+ for(const [za,zb] of [[roomFront,-7.525],[-6.625,roomBack]])box(.16,2.3,zb-za,-2.3,4.5,(za+zb)/2,plaster,'Spalla finestra laterale alta');
+ box(.16,.62,.9,-2.3,3.66,roomMid,plaster);box(.16,.38,.9,-2.3,5.46,roomMid,plaster);
+ box(.16,2.3,roomBack-roomFront,4.6,4.5,roomMid,plaster,'Fianco opposto stanza');
+ // Balcony door and transom, distinct from the end window.
+ box(.86,2.05,.035,1.15,4.375,roomFront-.11,glass,'Porta del balcone');
+ for(const x of [.72,1.15,1.58])box(.035,2.08,.05,x,4.375,roomFront-.145,white);
+ for(const y of [3.35,5.4])box(.9,.04,.06,1.15,y,roomFront-.145,white);
+ box(.78,.32,.04,1.15,3.53,roomFront-.16,green,'Pannello basso porta balcone');
+ box(.76,.14,.035,1.15,5.54,roomFront-.12,glass,'Sopraluce porta balcone');
+ // Window in the gable wall: faces the other direction from the balcony door.
+ box(.035,1.3,.90,-2.43,4.62,roomMid,glass,'Finestra sul frontone laterale');
+ for(const z of [roomMid-.45,roomMid,roomMid+.45])box(.05,1.33,.04,-2.46,4.62,z,white);
+ for(const y of [3.97,5.27])box(.06,.045,.94,-2.46,y,roomMid,white);
+ box(.23,.07,1.1,-2.4,3.91,roomMid,stone,'Davanzale frontone laterale');
+ for(const sign of [-1,1]){
+  const z=roomMid+sign*.7;box(.06,1.38,.42,-2.39,4.62,z,green,'Persiana finestra laterale alta');
+  for(let i=0;i<20;i++)box(.04,.026,.36,-2.45,3.98+i*.065,z,green);
+ }
+ const frontoneMat=plaster.clone();frontoneMat.side=T.DoubleSide;
+ for(const x of [-2.39,4.69]){
+  const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute([x,5.65,roomFront-.12,x,5.65,roomBack+.12,x,6.25,roomMid],3));g.setAttribute('uv',new T.Float32BufferAttribute([0,0,1,0,.5,1],2));g.computeVertexNormals();
+  const face=new T.Mesh(g,frontoneMat);face.name='Frontone stanza lungo terrazza';group.add(face);
+ }
+ const roofRun=1.25,roofRise=.6;
+ for(const sign of [-1,1]){
+  const roof=box(7.35,.1,Math.hypot(roofRun,roofRise),1.15,5.95,roomMid+sign*roofRun/2,tileMat,'Falda sopra stanza e balcone');roof.rotation.x=sign*Math.atan2(roofRise,roofRun);
+  for(let x=-2.5;x<4.9;x+=.19){const t=new T.Mesh(new T.CylinderGeometry(.058,.058,Math.hypot(roofRun,roofRise),6,1,true),tileMat);t.rotation.x=Math.PI/2+sign*Math.atan2(roofRise,roofRun);t.position.set(x,6.01,roomMid+sign*roofRun/2);group.add(t);}
+ }
+ box(7.05,.05,.07,1.15,3.33,-9.55,pipeBrown,'Gronda bordo terrazza');
+ beam([-2.34,.1,-9.5],[-2.34,5.6,-9.5],.065,pipeBrown);
+ // A small outdoor table indicates the balcony floor without blocking the route.
+ box(.5,.04,.42,-1.2,4.08,-8.7,white,'Tavolino terrazza');
+ for(const x of [-1.4,-1.0])for(const z of [-8.85,-8.55])box(.03,.69,.03,x,3.715,z,white);
  const canopy=box(2.45,.10,.95,1.55,2.40,-9.85,wood,'Tettoia ingresso cortile basso');canopy.rotation.x=-.14;
  for(let i=0;i<16;i++){const tile=new T.Mesh(new T.CylinderGeometry(.07,.07,.99,6,1,true),tileMat);tile.rotation.x=Math.PI/2-.14;tile.position.set(.4+i*.15,2.46,-9.85);group.add(tile);}
  box(7.1,.06,.7,1.15,.025,-9.8,stone,'Marciapiede del cortile');
@@ -3649,6 +3697,7 @@ window.createPhotoEnvironment=function(T,api){
  function foliage(x,y,z,s){const m=new T.Mesh(new T.IcosahedronGeometry(1,1),leaf);m.position.set(x,y,z);m.scale.set(s,s*.85,s);group.add(m);}
  for(let i=0;i<15;i++)foliage(7.75,4+Math.sin(i)*.15,-8+i*.85,.45);
  for(let i=0;i<12;i++)foliage(-3.1+i*.8,.18,-13.7,.35);
+ for(let i=0;i<9;i++)foliage(-12.35,.08,-5.8+i*.72,.16);
  // Distant uphill buildings are deliberately simple background silhouettes.
  for(const [x,z,w,h] of [[13,-8,6,6.5],[14,0,7,5.7]]){
   box(w,h,5,x,5.6+h/2,z,plaster,'Edificio sullo sfondo · stimato');
@@ -3678,18 +3727,20 @@ window.createPhotoEnvironment=function(T,api){
   return (x>8&&x<8.6&&z>-10.5&&z<6.2)||
    // Left terrace boundaries. The lower western court is a separate walk surface.
    (x>-11.4&&x<-11.15&&z>-6.15&&z<1)||
-   (x>-11.3&&x<-7.7&&z>-.0&&z<.98)||
+   (x>-9.92&&x<-7.6&&z>-6.1&&z<1.08)||
+   (x>-11.3&&x<-7.7&&z>.75&&z<1.08)||
    (x>-11.3&&x<-7.7&&z>-6.2&&z<-5.95)||
    (x>-6.2&&x<-2.6&&z>-14.6&&z<-11.65);
  }
  const openings=[
   {id:'rear-main',name:'Finestra alta del vero retro',x:.1,z:-6.75,side:'back',message:'Il retro in pietra ha una finestra alta con persiane e inferriata. La terrazza si trova sull’altro lato, a sinistra.'},
   {id:'rear-lower',name:'Finestra bassa del retro',x:.35,z:-6.75,side:'back',message:'Questo vano è nella parte bassa del prospetto posteriore in pietra.'},
-  {id:'rear-road',name:'Finestra sul passaggio stradale',x:3.4,z:-6.75,side:'back',message:'La finestra con grata del corpo intonacato affianca il prospetto posteriore.'},
+  {id:'rear-road',name:'Finestra sul passaggio stradale arretrato',x:3.4,z:-6.20,side:'back',message:'La finestra con grata del corpo intonacato affianca il prospetto posteriore.'},
   {id:'left-door',name:'Ingresso sotto la terrazza sinistra',x:-11.95,z:-2.95,side:'left',message:'Questa porta con grata si trova sotto la terrazza sul lato sinistro della casa.'},
+  {id:'left-upper',name:'Finestra laterale della stanza sopra la terrazza',x:-8.775,z:1.6,side:'left',message:'La finestra è sul frontone. Sull’altro lato della stessa stanza, arretrata dietro la terrazza, si apre la porta verso il balcone.'},
   {id:'left-court',name:'Finestra del cortile sinistro',x:-11.95,z:-.6,side:'left',message:'La finestra con inferriata appartiene al cortile laterale sinistro.'}
  ];
- group.userData={references:['DSC_0006','DSC_0007','DSC_0008','DSC_0009','DSC_0010','DSC_0301','DSC_0302','DSC_0303','veduta posteriore dall’alto · 25 novembre 2026'],terraceSide:'left',terraceBounds:{min:terraceBounds.min.toArray(),max:terraceBounds.max.toArray()},dimensions:'stimate dalle immagini',mainFacade:'invariata'};
+ group.userData={references:['DSC_0006','DSC_0007','DSC_0008','DSC_0009','DSC_0010','DSC_0301','DSC_0302','DSC_0303','veduta posteriore dall’alto · 25 novembre 2026'],terraceSide:'left',upperTerraceRoom:true,upperRoomLayout:'arretrata lungo la terrazza',rearPlasterSetback:.55,terraceBounds:{min:terraceBounds.min.toArray(),max:terraceBounds.max.toArray()},dimensions:'stimate dalle immagini',mainFacade:'invariata'};
  // Merge static surfaces by material: low draw-call count on phones.
  group.updateMatrixWorld(true);
  const batches=new Map();
@@ -3766,7 +3817,7 @@ window.createPhotoEnvironment=function(T,api){
  const $=id=>document.getElementById(id);
  document.getElementById('quotes').checked=false;dims.visible=false;heightDims.visible=false;shrubs.visible=true;
  // Keep vegetation in the surroundings from hiding the climbable facade.
- shrubs.children.forEach(o=>{if(o.isMesh&&o.geometry.type==='IcosahedronGeometry'&&o.position.z<p.fenceSetback&&o.geometry.parameters.radius>.5)o.scale.multiplyScalar(.35);});
+ shrubs.children.forEach(o=>{if(o.position.x>-11.4&&o.position.x<-7.6&&o.position.z>-6.2&&o.position.z<1.1)o.visible=false;if(o.isMesh&&o.geometry.type==='IcosahedronGeometry'&&o.position.z<p.fenceSetback&&o.geometry.parameters.radius>.5)o.scale.multiplyScalar(.35);});
  $('game-menu').onclick=()=>{const open=$('game-details').hidden;$('game-details').hidden=!open;$('game-menu').setAttribute('aria-expanded',String(open));};
  function touchText(text){return mobileLayout.matches?text.replace('E oppure Spazio · entra','Tocca Entra').replace(/Spazio per/gi,'Tocca Sali per').replace(/Premi E per/gi,'Tocca Apri la finestra per').replace(/Spazio · prosegui/g,'Tocca Sali per proseguire').replace(/Spazio · sali/g,'Tocca Sali').replace(/E · esamina/g,'Tocca Esamina').replace(/E · /g,'').replace(/C · scendi/g,'Tocca Scendi').replace(/con C/g,'con Scendi'):text;}
 
@@ -4041,7 +4092,7 @@ window.createPhotoEnvironment=function(T,api){
  }
  animateThrow(dt);
  if(throwMotion)pose(0,false);
- const delta=avatar.position.clone().sub(old);if(inside===wasInside)camera.position.add(delta);controls.target.copy(avatar.position).add(new T.Vector3(0,inside?1.1:1.8,0));controls.update();
+ const delta=avatar.position.clone().sub(old);if(inside===wasInside)camera.position.add(delta);controls.target.copy(avatar.position).add(new T.Vector3(0,inside?1.1:!climbing&&avatar.position.x<-7.7?2.8:1.8,0));controls.update();
  // Keep the orbit camera outside masonry when looking around corners.
  const ray=new T.Raycaster(controls.target,camera.position.clone().sub(controls.target).normalize(),.2,camera.position.distanceTo(controls.target));const hit=ray.intersectObjects(cameraWalls,false).find(h=>h.object.visible);if(!inside&&hit&&hit.distance>.65)camera.position.copy(controls.target).addScaledVector(ray.ray.direction,Math.max(.65,hit.distance-.2));
  if(!inside){camera.position.y=Math.max(camera.position.y,groundHeight(camera.position.x,camera.position.z)+.3);camera.lookAt(controls.target);}
