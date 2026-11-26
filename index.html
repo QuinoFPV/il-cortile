@@ -3955,7 +3955,9 @@ window.createPhotoEnvironment=function(T,api){
   won=false;inside=false;climbing=false;level=0;transition=null;controls.minDistance=2;controls.maxDistance=8;
   returnedToGround=false;glassBroken=false;throwMotion=null;nearThrowPoint=false;
   stone.visible=false;glassDebris.clear();closeShutters();setBrokenGlass(false);
-  avatar.position.set(-.45,groundHeight(-.45,.9),.9);avatar.rotation.y=0;
+  // Start on the upper approach, facing the house across the wooden railing.
+  const startX=2,startZ=4.85;
+  avatar.position.set(startX,groundHeight(startX,startZ),startZ);avatar.rotation.y=0;
   camera.position.copy(avatar.position).add(new T.Vector3(mobileLayout.matches?1.2:.65,mobileLayout.matches?6:2.4,mobileLayout.matches?5.3:2));
   camera.position.y=Math.max(camera.position.y,groundHeight(camera.position.x,camera.position.z)+.6);
   controls.target.copy(avatar.position).add(new T.Vector3(0,1.8,0));
